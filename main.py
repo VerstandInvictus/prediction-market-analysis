@@ -3,12 +3,25 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from simple_term_menu import TerminalMenu
+try:
+    from simple_term_menu import TerminalMenu
+except ImportError:
+    TerminalMenu = None  # Not available on Windows -- CLI args still work
 
 from src.common.analysis import Analysis
 from src.common.indexer import Indexer
 from src.common.util import package_data
 from src.common.util.strings import snake_to_title
+
+
+def _require_terminal_menu() -> None:
+    """Bail out with a helpful message if interactive menus aren't available."""
+    if TerminalMenu is None:
+        print("Error: Interactive menus require 'simple-term-menu' (not available on Windows).")
+        print("Pass a name argument instead, e.g.:")
+        print("  uv run main.py analyze <name>")
+        print("  uv run main.py index <name>")
+        sys.exit(1)
 
 
 def analyze(name: str | None = None):
@@ -53,6 +66,8 @@ def analyze(name: str | None = None):
         sys.exit(1)
 
     # Interactive menu mode
+    _require_terminal_menu()
+
     options = ["[All] Run all analyses"]
     for analysis_cls in analyses:
         instance = analysis_cls()
@@ -92,15 +107,34 @@ def analyze(name: str | None = None):
             print(f"  {fmt}: {path}")
 
 
-def index():
-    """Interactive indexer selection menu."""
+def index(name: str | None = None):
+    """Run indexer by name or show interactive menu."""
     indexers = Indexer.load()
 
     if not indexers:
         print("No indexers found in src/indexers/")
         return
 
-    # Build menu options
+    # If name provided, run that specific indexer
+    if name:
+        for indexer_cls in indexers:
+            instance = indexer_cls()
+            if instance.name == name:
+                print(f"\nRunning: {instance.name}\n")
+                instance.run()
+                print("\nIndexer complete.")
+                return
+
+        # No match found
+        print(f"Indexer '{name}' not found. Available indexers:")
+        for indexer_cls in indexers:
+            instance = indexer_cls()
+            print(f"  - {instance.name}")
+        sys.exit(1)
+
+    # Interactive menu mode
+    _require_terminal_menu()
+
     options = []
     for indexer_cls in indexers:
         instance = indexer_cls()
@@ -134,8 +168,8 @@ def package():
 
 def main():
     if len(sys.argv) < 2:
-        print("\nUsage: uv run main.py <command>")
-        print("Commands: analyze, index, package")
+        print("\nUsage: uv run main.py <command> [name]")
+        print("Commands: analyze [name|all], index [name], package")
         sys.exit(0)
 
     command = sys.argv[1]
@@ -146,7 +180,8 @@ def main():
         sys.exit(0)
 
     if command == "index":
-        index()
+        name = sys.argv[2] if len(sys.argv) > 2 else None
+        index(name)
         sys.exit(0)
 
     if command == "package":
